@@ -165,69 +165,109 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     )
 
 async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    query = update.callback_query
-    await query.answer()
-    
-    if query.data == 'daily':
-        keyboard = []
-        row = []
-        for key, (name, symbol, _) in SIGNS.items():
-            row.append(InlineKeyboardButton(f"{symbol} {name}", callback_data=f'horo_{key}'))
-            if len(row) == 3:
-                keyboard.append(row)
-                row = []
-        if row:
-            keyboard.append(row)
-        keyboard.append([InlineKeyboardButton("🔙 Voltar", callback_data='back')])
+    """Gerencia todos os botões inline com tratamento de erro"""
+    try:
+        query = update.callback_query
+        await query.answer()
         
-        await query.edit_message_text(
-            "🌟 Escolha seu signo:",
-            reply_markup=InlineKeyboardMarkup(keyboard),
-            parse_mode='Markdown'
-        )
-    
-    elif query.data.startswith('horo_'):
-        sign = query.data.replace('horo_', '')
-        horoscope = get_horoscope(sign)
-        await query.edit_message_text(horoscope, parse_mode='Markdown')
+        data = query.data
         
-        # Botão voltar
-        keyboard = [[InlineKeyboardButton("🔙 Menu Principal", callback_data='back')]]
-        await query.message.reply_text("Mais opções:", reply_markup=InlineKeyboardMarkup(keyboard))
+        # DEBUG: Log para ver qual botão foi pressionado
+        logger.info(f"Botão pressionado: {data}")
+        
+        if data == 'daily':
+            await show_signs_menu(query, "daily")
+            
+        elif data == 'analysis':
+            await query.edit_message_text(
+                "📅 *Análise por Data de Nascimento*\n\n"
+                "Envie sua data no formato: *DD/MM/AAAA*\n"
+                "Exemplo: 15/03/1995",
+                parse_mode='Markdown'
+            )
+            return DATE
+            
+        elif data == 'chart':
+            await query.edit_message_text(
+                "⭐ *Mapa Astral Completo*\n\n"
+                "Vou precisar de algumas informações.\n\n"
+                "1️⃣ Primeiro, envie sua *data de nascimento* (DD/MM/AAAA):",
+                parse_mode='Markdown'
+            )
+            context.user_data['chart_step'] = 'date'
+            return DATE
+            
+        elif data == 'help':
+            await query.edit_message_text(
+                "🔮 *Como usar o bot:*\n\n"
+                "• Use os botões para navegar\n"
+                "• Horóscopo diário atualizado\n"
+                "• Mapa astral visual\n"
+                "• Análise baseada na data\n\n"
+                "💡 Dica: Para mapa astral preciso, informe a hora exata!",
+                parse_mode='Markdown'
+            )
+            
+        elif data == 'back':
+            # Volta ao menu principal
+            keyboard = [
+                [InlineKeyboardButton("🔮 Horóscopo Diário", callback_data='daily')],
+                [InlineKeyboardButton("📊 Análise por Data", callback_data='analysis')],
+                [InlineKeyboardButton("⭐ Mapa Astral", callback_data='chart')],
+                [InlineKeyboardButton("❓ Ajuda", callback_data='help')]
+            ]
+            await query.edit_message_text(
+                "✨ *Menu Principal* ✨\n\nEscolha uma opção:",
+                reply_markup=InlineKeyboardMarkup(keyboard),
+                parse_mode='Markdown'
+            )
+            
+        elif data.startswith('horo_'):
+            sign = data.replace('horo_', '')
+            logger.info(f"Buscando horóscopo para: {sign}")
+            
+            # Verifica se signo existe
+            if sign not in SIGNS:
+                logger.error(f"Signo não encontrado: {sign}")
+                await query.edit_message_text(
+                    "❌ Signo não reconhecido. Tente novamente.",
+                    parse_mode='Markdown'
+                )
+                return
+                
+            horoscope = get_horoscope(sign)
+            await query.edit_message_text(horoscope, parse_mode='Markdown')
+            
+            # Botão voltar
+            keyboard = [[InlineKeyboardButton("🔙 Menu Principal", callback_data='back')]]
+            await query.message.reply_text(
+                "Quer mais previsões?",
+                reply_markup=InlineKeyboardMarkup(keyboard)
+            )
+            
+        elif data.startswith('sign_'):
+            # Compatibilidade com código antigo
+            sign = data.replace('sign_', '')
+            if sign in SIGNS:
+                horoscope = get_horoscope(sign)
+                await query.edit_message_text(horoscope, parse_mode='Markdown')
+            else:
+                await query.edit_message_text("❌ Erro: Signo inválido")
+                
+        else:
+            logger.warning(f"Callback desconhecido: {data}")
+            await query.edit_message_text("❌ Opção não reconhecida. Use /start")
+            
+    except Exception as e:
+        logger.error(f"ERRO no button_handler: {e}", exc_info=True)
+        try:
+            await query.edit_message_text(
+                "❌ Ocorreu um erro. Tente novamente com /start"
+            )
+        except:
+            pass  # Se não conseguir editar, ignora
     
-    elif query.data == 'analysis':
-        await query.edit_message_text(
-            "📅 *Análise por Data de Nascimento*\n\n"
-            "Envie sua data no formato: *DD/MM/AAAA*\n"
-            "Exemplo: 15/03/1995",
-            parse_mode='Markdown'
-        )
-        return DATE
-    
-    elif query.data == 'chart':
-        await query.edit_message_text(
-            "⭐ *Mapa Astral Completo*\n\n"
-            "Vou precisar de algumas informações.\n\n"
-            "1️⃣ Primeiro, envie sua *data de nascimento* (DD/MM/AAAA):",
-            parse_mode='Markdown'
-        )
-        context.user_data['chart_step'] = 'date'
-        return DATE
-    
-    elif query.data == 'help':
-        await query.edit_message_text(
-            "🔮 *Como usar o bot:*\n\n"
-            "• Use os botões para navegar\n"
-            "• Horóscopo diário atualizado\n"
-            "• Mapa astral visual\n"
-            "• Análise baseada na data\n\n"
-            "💡 Dica: Para mapa astral preciso, informe a hora exata!",
-            parse_mode='Markdown'
-        )
-    
-    elif query.data == 'back':
-        await start(update, context)
-
+    return None  # Importante para ConversationHandler
 async def receive_date(update: Update, context: ContextTypes.DEFAULT_TYPE):
     text = update.message.text
     try:
@@ -361,6 +401,18 @@ def main():
         per_message=True,  # Resolve o warning
         name="main_conversation"
     )
+
+async def error_handler(update: object, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Loga erros e envia mensagem amigável ao usuário"""
+    logger.error(f"Exceção: {context.error}", exc_info=context.error)
+    
+    if isinstance(update, Update) and update.effective_message:
+        await update.effective_message.reply_text(
+            "❌ Ops! Algo deu errado. Tente novamente com /start"
+        )
+
+# No main(), adicione:
+application.add_error_handler(error_handler)
 
 if __name__ == '__main__':
     main()
