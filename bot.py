@@ -2,15 +2,23 @@ import os
 import logging
 import random
 from datetime import datetime
-from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
-from telegram.ext import Application, CommandHandler, CallbackQueryHandler,                        ConversationHandler, MessageHandler, ContextTypes, filters
+from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup, BotCommand
+from telegram.ext import Application, CommandHandler, CallbackQueryHandler, 
+                        ConversationHandler, MessageHandler, ContextTypes, filters
 import requests
 from io import BytesIO
 import matplotlib.pyplot as plt
 import numpy as np
-from matplotlib.patches import Circle, Wedge
+from matplotlib.patches import Circle
 
-# Configurações
+# Configurações de logging
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+)
+logger = logging.getLogger(__name__)
+
+# Variáveis de ambiente
 TOKEN = os.getenv('TELEGRAM_BOT_TOKEN')
 API_KEY = os.getenv('FREE_ASTRO_API_KEY')
 API_URL = "https://api.freeastroapi.com/v1"
@@ -31,21 +39,21 @@ SIGNS = {
     'peixes': ('Peixes', '♓', '19/02 - 20/03')
 }
 
-# Estados
+# Estados para ConversationHandler
 DATE, TIME, CITY = range(3)
 
-logging.basicConfig(level=logging.INFO)
-logger = logging.getLogger(__name__)
 
 def get_horoscope(sign):
     """Busca horóscopo da API ou gera localmente"""
     try:
         if API_KEY:
             headers = {'Authorization': f'Bearer {API_KEY}'}
-            response = requests.get(f'{API_URL}/horoscope/daily', 
-                                  headers=headers, 
-                                  params={'sign': sign, 'day': 'today'},
-                                  timeout=10)
+            response = requests.get(
+                f'{API_URL}/horoscope/daily',
+                headers=headers,
+                params={'sign': sign, 'day': 'today'},
+                timeout=10
+            )
             if response.status_code == 200:
                 data = response.json()
                 return f"""
@@ -86,6 +94,7 @@ def get_horoscope(sign):
 💰 *Dinheiro:* Avalie bem antes de gastar
 🍀 *Números:* {random.randint(1,99)}, {random.randint(10,99)}, {random.randint(10,99)}
 """
+
 
 def generate_chart_image(name, date, sign):
     """Gera imagem do mapa astral"""
@@ -137,6 +146,7 @@ def generate_chart_image(name, date, sign):
     plt.close()
     return buf
 
+
 def calculate_sign(day, month):
     """Calcula signo solar"""
     dates = [(1, 20, 'capricornio'), (2, 19, 'aquario'), (3, 21, 'peixes'),
@@ -149,8 +159,11 @@ def calculate_sign(day, month):
             return sign
     return 'capricornio'
 
-# Comandos
+
+# ============ HANDLERS ============
+
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Comando /start"""
     keyboard = [
         [InlineKeyboardButton("🔮 Horóscopo Diário", callback_data='daily')],
         [InlineKeyboardButton("📊 Análise por Data", callback_data='analysis')],
@@ -164,6 +177,7 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
         parse_mode='Markdown'
     )
 
+
 async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Gerencia todos os botões inline com tratamento de erro"""
     try:
@@ -171,12 +185,26 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await query.answer()
         
         data = query.data
-        
-        # DEBUG: Log para ver qual botão foi pressionado
         logger.info(f"Botão pressionado: {data}")
         
         if data == 'daily':
-            await show_signs_menu(query, "daily")
+            # Mostra menu de signos
+            keyboard = []
+            row = []
+            for key, (name, symbol, _) in SIGNS.items():
+                row.append(InlineKeyboardButton(f"{symbol} {name}", callback_data=f'horo_{key}'))
+                if len(row) == 3:
+                    keyboard.append(row)
+                    row = []
+            if row:
+                keyboard.append(row)
+            keyboard.append([InlineKeyboardButton("🔙 Voltar", callback_data='back')])
+            
+            await query.edit_message_text(
+                "🌟 Escolha seu signo:",
+                reply_markup=InlineKeyboardMarkup(keyboard),
+                parse_mode='Markdown'
+            )
             
         elif data == 'analysis':
             await query.edit_message_text(
@@ -226,7 +254,6 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
             sign = data.replace('horo_', '')
             logger.info(f"Buscando horóscopo para: {sign}")
             
-            # Verifica se signo existe
             if sign not in SIGNS:
                 logger.error(f"Signo não encontrado: {sign}")
                 await query.edit_message_text(
@@ -245,15 +272,6 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 reply_markup=InlineKeyboardMarkup(keyboard)
             )
             
-        elif data.startswith('sign_'):
-            # Compatibilidade com código antigo
-            sign = data.replace('sign_', '')
-            if sign in SIGNS:
-                horoscope = get_horoscope(sign)
-                await query.edit_message_text(horoscope, parse_mode='Markdown')
-            else:
-                await query.edit_message_text("❌ Erro: Signo inválido")
-                
         else:
             logger.warning(f"Callback desconhecido: {data}")
             await query.edit_message_text("❌ Opção não reconhecida. Use /start")
@@ -265,10 +283,13 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 "❌ Ocorreu um erro. Tente novamente com /start"
             )
         except:
-            pass  # Se não conseguir editar, ignora
+            pass
     
-    return None  # Importante para ConversationHandler
+    return None
+
+
 async def receive_date(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Recebe data de nascimento"""
     text = update.message.text
     try:
         day, month, year = map(int, text.split('/'))
@@ -322,7 +343,9 @@ async def receive_date(update: Update, context: ContextTypes.DEFAULT_TYPE):
         )
         return DATE
 
+
 async def receive_time(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Recebe hora de nascimento"""
     text = update.message.text
     try:
         hour, minute = map(int, text.split(':'))
@@ -341,13 +364,14 @@ async def receive_time(update: Update, context: ContextTypes.DEFAULT_TYPE):
         )
         return TIME
 
+
 async def receive_city(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Gera e envia mapa astral"""
     city = update.message.text
     user = update.effective_user
     date = context.user_data.get('birth_date', '01/01/2000')
     sign = context.user_data.get('sign', 'Desconhecido')
     
-    # Gerar imagem do mapa astral
     await update.message.reply_text("🎨 Gerando seu mapa astral... Aguarde!")
     
     try:
@@ -362,54 +386,41 @@ async def receive_city(update: Update, context: ContextTypes.DEFAULT_TYPE):
 📍 {city}
 ☉ Signo Solar: {sign}
 
-💫 Este é um mapa astral básico. Para análise completa com casas astrológicas detalhadas, consulte um astrólogo profissional!
+💫 Este é um mapa astral básico. Para análise completa consulte um astrólogo!
 
 🔄 Use /start para novo mapa
 """,
             parse_mode='Markdown'
         )
     except Exception as e:
-        logger.error(f"Chart error: {e}")
+        logger.error(f"Erro ao gerar mapa: {e}")
         await update.message.reply_text(
             "❌ Erro ao gerar mapa. Tente novamente com /start"
         )
     
     return ConversationHandler.END
 
+
 async def cancel(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    await update.message.reply_text("Operação cancelada. Use /start")
+    """Cancela conversação"""
+    await update.message.reply_text("Operação cancelada. Use /start para recomeçar.")
     return ConversationHandler.END
 
-def main():
-    if not TOKEN:
-        logger.error("TOKEN não configurado!")
-        return
-    
-    application = Application.builder().token(TOKEN).build()
 
-    # Conversation handlers
-    conv_handler = ConversationHandler(
-        entry_points=[
-            CallbackQueryHandler(button_handler, pattern='^(analysis|chart)$')
-        ],
-        states={
-            DATE: [MessageHandler(filters.TEXT & ~filters.COMMAND, receive_date)],
-            TIME: [MessageHandler(filters.TEXT & ~filters.COMMAND, receive_time)],
-            CITY: [MessageHandler(filters.TEXT & ~filters.COMMAND, receive_city)]
-        },
-        fallbacks=[CommandHandler('cancel', cancel)],
-        per_message=True,  # Resolve o warning
-        name="main_conversation"
-    )
+async def post_init(application: Application):
+    """Configura comandos automaticamente ao iniciar"""
+    commands = [
+        BotCommand("start", "Iniciar o bot e ver menu principal"),
+        BotCommand("daily", "Ver horóscopo do dia"),
+        BotCommand("chart", "Gerar mapa astral completo"),
+        BotCommand("analysis", "Análise astrológica por data de nascimento"),
+        BotCommand("help", "Ajuda e informações sobre o bot"),
+    ]
+    await application.bot.set_my_commands(commands)
+    logger.info("✅ Comandos configurados automaticamente!")
 
-async def error_handler(update: object, context: ContextTypes.DEFAULT_TYPE) -> None:
-    """Loga erros e envia mensagem amigável ao usuário"""
-    logger.error(f"Exceção: {context.error}", exc_info=context.error)
-    
-    if isinstance(update, Update) and update.effective_message:
-        await update.effective_message.reply_text(
-            "❌ Ops! Algo deu errado. Tente novamente com /start"
-        )
+
+# ============ MAIN ============
 
 def main():
     if not TOKEN:
@@ -417,9 +428,9 @@ def main():
         return
     
     # Cria a aplicação
-    application = Application.builder().token(TOKEN).build()
+    application = Application.builder().token(TOKEN).post_init(post_init).build()
     
-    # Handler de erros global (ADICIONAR AQUI, DEPOIS DE CRIAR application)
+    # Handler de erros global
     async def error_handler(update: object, context: ContextTypes.DEFAULT_TYPE) -> None:
         """Loga erros e envia mensagem amigável ao usuário"""
         logger.error(f"Exceção: {context.error}", exc_info=context.error)
@@ -453,3 +464,7 @@ def main():
     
     logger.info("Bot iniciado!")
     application.run_polling()
+
+
+if __name__ == '__main__':
+    main()
