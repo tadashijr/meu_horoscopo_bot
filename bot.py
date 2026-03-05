@@ -346,7 +346,7 @@ def main():
         return
     
     application = Application.builder().token(TOKEN).build()
-    
+
     # Conversation handlers
     conv_handler = ConversationHandler(
         entry_points=[
@@ -357,15 +357,10 @@ def main():
             TIME: [MessageHandler(filters.TEXT & ~filters.COMMAND, receive_time)],
             CITY: [MessageHandler(filters.TEXT & ~filters.COMMAND, receive_city)]
         },
-        fallbacks=[CommandHandler('cancel', cancel)]
+        fallbacks=[CommandHandler('cancel', cancel)],
+        per_message=True,  # Resolve o warning
+        name="main_conversation"
     )
-    
-    application.add_handler(CommandHandler('start', start))
-    application.add_handler(conv_handler)
-    application.add_handler(CallbackQueryHandler(button_handler))
-    
-    logger.info("Bot iniciado!")
-    application.run_polling()
 
 if __name__ == '__main__':
     main()
