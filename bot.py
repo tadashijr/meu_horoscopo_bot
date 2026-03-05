@@ -411,8 +411,45 @@ async def error_handler(update: object, context: ContextTypes.DEFAULT_TYPE) -> N
             "❌ Ops! Algo deu errado. Tente novamente com /start"
         )
 
-# No main(), adicione:
-application.add_error_handler(error_handler)
-
-if __name__ == '__main__':
-    main()
+def main():
+    if not TOKEN:
+        logger.error("TOKEN não configurado!")
+        return
+    
+    # Cria a aplicação
+    application = Application.builder().token(TOKEN).build()
+    
+    # Handler de erros global (ADICIONAR AQUI, DEPOIS DE CRIAR application)
+    async def error_handler(update: object, context: ContextTypes.DEFAULT_TYPE) -> None:
+        """Loga erros e envia mensagem amigável ao usuário"""
+        logger.error(f"Exceção: {context.error}", exc_info=context.error)
+        
+        if isinstance(update, Update) and update.effective_message:
+            await update.effective_message.reply_text(
+                "❌ Ops! Algo deu errado. Tente novamente com /start"
+            )
+    
+    application.add_error_handler(error_handler)
+    
+    # Conversation handlers
+    conv_handler = ConversationHandler(
+        entry_points=[
+            CallbackQueryHandler(button_handler, pattern='^(analysis|chart)$')
+        ],
+        states={
+            DATE: [MessageHandler(filters.TEXT & ~filters.COMMAND, receive_date)],
+            TIME: [MessageHandler(filters.TEXT & ~filters.COMMAND, receive_time)],
+            CITY: [MessageHandler(filters.TEXT & ~filters.COMMAND, receive_city)]
+        },
+        fallbacks=[CommandHandler('cancel', cancel)],
+        per_message=True,
+        name="main_conversation"
+    )
+    
+    # Adiciona handlers
+    application.add_handler(CommandHandler('start', start))
+    application.add_handler(conv_handler)
+    application.add_handler(CallbackQueryHandler(button_handler))
+    
+    logger.info("Bot iniciado!")
+    application.run_polling()
