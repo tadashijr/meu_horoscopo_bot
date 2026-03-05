@@ -3,8 +3,15 @@ import logging
 import random
 from datetime import datetime
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup, BotCommand
-from telegram.ext import Application, CommandHandler, CallbackQueryHandler, 
-                        ConversationHandler, MessageHandler, ContextTypes, filters
+from telegram.ext import (
+    Application,
+    CommandHandler,
+    CallbackQueryHandler,
+    ConversationHandler,
+    MessageHandler,
+    ContextTypes,
+    filters,
+)
 import requests
 from io import BytesIO
 import matplotlib.pyplot as plt
